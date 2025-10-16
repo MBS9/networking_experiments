@@ -12,7 +12,8 @@
 
 #include "protocols.h"
 
-#define OWN_IP {192, 168, 1, 10}
+#define OWN_IP {192, 168, 1, 255}
+#define OWN_MAC {0x00, 0x15, 0x5d, 0x05, 0xab, 0x06}
 
 int tun_alloc(char *dev)
 {
@@ -81,10 +82,10 @@ int main()
         std::cout << "Hit enter to begin sending ARP packets..." << std::endl;
         std::cin.get();
         const full_arp_packet *arp_packet = create_arp_packet(
-            {0x02, 0x00, 0x00, 0x00, 0x00, 0x01}, // Source MAC
-            OWN_IP,                               // Source IP
-            {0xff, 0xff, 0xff, 0xff, 0xff, 0xff}, // Destination MAC (Broadcast)
-            {192, 168, 1, 174}                    // Destination IP
+            OWN_MAC,           // Source MAC
+            OWN_IP,            // Source IP
+            MAC_BROADCAST,     // Destination MAC (Broadcast)
+            {192, 168, 1, 174} // Destination IP
         );
         int bytes_sent = send_frame(tun_fd, reinterpret_cast<const uint8_t *>(arp_packet), sizeof(full_arp_packet));
         delete arp_packet;

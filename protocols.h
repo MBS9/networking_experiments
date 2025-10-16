@@ -2,6 +2,8 @@
 #include <cstdint>
 #include <vector>
 
+#define MAC_BROADCAST {0xff, 0xff, 0xff, 0xff, 0xff, 0xff}
+
 #define ETHERNET_TYPE_ARP 0x0806
 #define HARDWARE_ADDR_LEN 6
 #define IP_ADDR_LEN 4

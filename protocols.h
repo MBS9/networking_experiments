@@ -7,6 +7,7 @@
 #define ETHERNET_TYPE_ARP 0x0806
 #define HARDWARE_ADDR_LEN 6
 #define IP_ADDR_LEN 4
+#define MAX_ETHERNET_FRAME_SIZE 1518
 
 struct ethernet_header
 {
@@ -16,6 +17,7 @@ struct ethernet_header
 } __attribute__((packed));
 
 #define ARP_REQUEST 1
+#define ARP_REPLY 2
 #define HARDWARE_TYPE_ETHERNET 1
 #define PROTOCOL_TYPE_IPv4 0x0800
 
@@ -35,4 +37,6 @@ struct full_arp_packet
 
 struct full_arp_packet *create_arp_packet(const std::vector<uint8_t> &srchw, const std::vector<uint8_t> &srcpr,
                                           const std::vector<uint8_t> &dsthw, const std::vector<uint8_t> &dstpr);
+std::vector<uint8_t> get_mac_from_arp(const full_arp_packet *arp_response);
+
 void setup_ethernet_header(ethernet_header &eth, const std::vector<uint8_t> &dst, const std::vector<uint8_t> &src, uint16_t type);

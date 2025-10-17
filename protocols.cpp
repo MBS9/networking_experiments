@@ -1,6 +1,7 @@
 #include <arpa/inet.h>
 #include <vector>
 #include <cstring>
+#include <stdexcept>
 #include "protocols.h"
 
 struct full_arp_packet *create_arp_packet(const std::vector<uint8_t> &srchw, const std::vector<uint8_t> &srcpr,
@@ -18,6 +19,15 @@ struct full_arp_packet *create_arp_packet(const std::vector<uint8_t> &srchw, con
     std::memcpy(packet->dsthw, dsthw.data(), HARDWARE_ADDR_LEN);
     std::memcpy(packet->dstpr, dstpr.data(), IP_ADDR_LEN);
     return packet;
+}
+
+std::vector<uint8_t> get_mac_from_arp(const full_arp_packet *arp_response)
+{
+    if (ntohs(arp_response->opcode) != ARP_REPLY)
+    {
+        throw std::runtime_error("Received packet is not an ARP reply.");
+    }
+    return std::vector<uint8_t>(arp_response->srchw, arp_response->srchw + HARDWARE_ADDR_LEN);
 }
 
 void setup_ethernet_header(ethernet_header &eth, const std::vector<uint8_t> &dst, const std::vector<uint8_t> &src, uint16_t type)

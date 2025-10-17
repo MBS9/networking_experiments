@@ -12,8 +12,15 @@
 
 #include "protocols.h"
 
-#define OWN_IP {192, 168, 1, 255}
-#define OWN_MAC {0x00, 0x15, 0x5d, 0x05, 0xab, 0x06}
+// The below refer to the ip and mac address assigned to the current computer
+// Since the tap interface isn't connected to any network, these can be arbitrary
+#define OWN_IP {10, 0, 0, 1}
+#define OWN_IP_WITH_SUBNET_MASK "10.0.0.1/24"
+
+// The below is a random MAC address that doesn't belong to the current computer
+// It is a pretend address of another device on the same network
+#define PRETEND_MAC {0x01, 0x57, 0x47, 0x85, 0x1f, 0xc6}
+#define PRETEND_IP {10, 0, 0, 2}
 
 int tun_alloc(char *dev)
 {
@@ -78,14 +85,15 @@ int main()
         {
             throw std::runtime_error("Failed to bring up the TAP interface. This operation requires root privileges. Try running with sudo.");
         }
+        system(("ip addr add " + std::string(OWN_IP_WITH_SUBNET_MASK) + " dev " + std::string(name)).c_str());
         std::cout << "TAP interface '" << name << "' created with file descriptor: " << tun_fd << std::endl;
         std::cout << "Hit enter to begin sending ARP packets..." << std::endl;
         std::cin.get();
         const full_arp_packet *arp_packet = create_arp_packet(
-            OWN_MAC,           // Source MAC
-            OWN_IP,            // Source IP
-            MAC_BROADCAST,     // Destination MAC (Broadcast)
-            {192, 168, 1, 174} // Destination IP
+            PRETEND_MAC,   // Source MAC
+            PRETEND_IP,    // Source IP
+            MAC_BROADCAST, // Destination MAC (Broadcast)
+            OWN_IP         // Destination IP
         );
         int bytes_sent = send_frame(tun_fd, reinterpret_cast<const uint8_t *>(arp_packet), sizeof(full_arp_packet));
         delete arp_packet;

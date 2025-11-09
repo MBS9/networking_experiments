@@ -12,16 +12,9 @@
 #include <cerrno>
 
 #include "protocols.h"
+#include "main.h"
 
-// The below refer to the ip and mac address assigned to the current computer
-// Since the tap interface isn't connected to any network, these can be arbitrary
-#define GATEWAY_IP {10, 0, 0, 1}
-#define GATEWAY_IP_WITH_SUBNET_MASK "10.0.0.1/24"
-
-// The below is a random MAC address that doesn't belong to the current computer
-// It is a pretend address of another device on the same network
-#define PRETEND_MAC {0x01, 0x57, 0x47, 0x85, 0x1f, 0xc6}
-#define PRETEND_IP {10, 0, 0, 2}
+int tun_fd;
 
 int tun_alloc(char *dev)
 {
@@ -74,14 +67,14 @@ int receive_frame(int fd, uint8_t *buffer, size_t len)
     return n_read;
 }
 
-std::vector<uint8_t> get_gateway_mac(int tun_fd)
+std::vector<uint8_t> arp_lookup(std::vector<uint8_t> ip)
 {
     const full_arp_packet *arp_packet = create_arp_packet(
         PRETEND_MAC,   // Source MAC
         PRETEND_IP,    // Source IP
         MAC_BROADCAST, // Destination MAC (Broadcast)
-        GATEWAY_IP     // Destination IP
-    );
+        ip,            // Destination IP,
+        ARP_REQUEST);
     int bytes_sent = send_frame(tun_fd, reinterpret_cast<const uint8_t *>(arp_packet), sizeof(full_arp_packet));
     delete arp_packet;
     if (bytes_sent != sizeof(full_arp_packet))
@@ -104,6 +97,44 @@ std::vector<uint8_t> get_gateway_mac(int tun_fd)
     return get_mac_from_arp(arp_response);
 }
 
+bool arp_reply()
+{
+    uint8_t buffer[MAX_ETHERNET_FRAME_SIZE];
+    int bytes_received = 0;
+    full_arp_packet *arp_response = reinterpret_cast<full_arp_packet *>(buffer);
+    arp_response->eth.type = 0;
+    while (ntohs(arp_response->eth.type) != ETHERNET_TYPE_ARP || ntohs(arp_response->opcode) != ARP_REQUEST)
+    {
+        std::memset(buffer, 0, sizeof(buffer));
+        bytes_received = receive_frame(tun_fd, buffer, sizeof(buffer));
+    }
+    if (bytes_received < sizeof(full_arp_packet))
+    {
+        throw std::runtime_error("Received packet is smaller than an ARP packet.");
+    }
+    uint8_t pretend_ip[] = PRETEND_IP;
+    if (std::memcmp(arp_response->dstpr, pretend_ip, sizeof(pretend_ip)) == 0)
+    {
+        full_arp_packet *arp_packet = create_arp_packet(
+            PRETEND_MAC, // Source MAC
+            PRETEND_IP,  // Source IP
+            std::vector(arp_response->srchw, arp_response->srchw + 6),
+            std::vector(arp_response->srcpr, arp_response->srcpr + 4),
+            ARP_REPLY);
+        int bytes_sent = send_frame(tun_fd, reinterpret_cast<const uint8_t *>(arp_packet), sizeof(full_arp_packet));
+        delete arp_packet;
+        if (bytes_sent != sizeof(full_arp_packet))
+        {
+            throw std::runtime_error("Failed to send complete ARP request packet.");
+        }
+        return true;
+    }
+    else
+    {
+        return false;
+    }
+}
+
 int main()
 {
     char name[IFNAMSIZ];
@@ -111,7 +142,7 @@ int main()
     std::strncpy(name, "tap0", strlen("tap0"));
     try
     {
-        int tun_fd = tun_alloc(name);
+        tun_fd = tun_alloc(name);
         if (system(("ip link set dev " + std::string(name) + " up").c_str()) != 0)
         {
             throw std::runtime_error("Failed to bring up the TAP interface. This operation requires root privileges. Try running with sudo.");
@@ -120,7 +151,11 @@ int main()
         std::cout << "TAP interface '" << name << "' created with file descriptor: " << tun_fd << std::endl;
         std::cout << "Hit enter to begin sending ARP packets..." << std::endl;
         std::cin.get();
-        std::vector<uint8_t> gateway_mac = get_gateway_mac(tun_fd);
+        udp_header *p1 = reinterpret_cast<udp_header *>(new uint8_t[sizeof(udp_header) + 2]);
+        setup_udp_header(*p1, PRETEND_IP, GATEWAY_IP, 2, 1, 1);
+        memcpy(p1->data, "s", 2);
+        send_frame(tun_fd, reinterpret_cast<const uint8_t *>(p1), sizeof(udp_header) + 2);
+        std::cout << arp_reply() << std::endl;
         std::cout << "Exiting!" << std::endl;
         std::cin.get();
         close(tun_fd);

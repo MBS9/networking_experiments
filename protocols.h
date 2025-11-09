@@ -5,6 +5,7 @@
 #define MAC_BROADCAST {0xff, 0xff, 0xff, 0xff, 0xff, 0xff}
 
 #define ETHERNET_TYPE_ARP 0x0806
+#define ETHERNET_TYPE_IPV4 0x0800
 #define HARDWARE_ADDR_LEN 6
 #define IP_ADDR_LEN 4
 #define MAX_ETHERNET_FRAME_SIZE 1518
@@ -35,8 +36,39 @@ struct full_arp_packet
     uint8_t dstpr[IP_ADDR_LEN];       // Destination protocol address - plen bytes (see above). If IPv4 can just be a "u32" type.
 } __attribute__((packed));
 
+struct ip_header
+{
+    ethernet_header eth;            // Ethernet header
+    uint8_t version_ihl;            // Version and Internet Header Length
+    uint8_t tos;                    // Type of Service
+    uint16_t total_length;          // Total Length
+    uint16_t identification;        // Identification
+    uint16_t flags_fragment_offset; // Flags and Fragment Offset
+    uint8_t ttl;                    // Time to Live
+    uint8_t protocol;               // Protocol
+    uint16_t header_checksum;       // Header Checksum
+    uint32_t src_ip;                // Source IP Address
+    uint32_t dst_ip;                // Destination IP Address
+} __attribute__((packed));
+
+struct udp_header
+{
+    ip_header ip;      // Ip header
+    uint16_t src_port; // Source port
+    uint16_t dst_port; // Destination port
+    uint16_t length;   // Length of UDP header and payload
+    uint16_t checksum; // Checksum
+    char data[];
+} __attribute__((packed));
+
 struct full_arp_packet *create_arp_packet(const std::vector<uint8_t> &srchw, const std::vector<uint8_t> &srcpr,
-                                          const std::vector<uint8_t> &dsthw, const std::vector<uint8_t> &dstpr);
+                                          const std::vector<uint8_t> &dsthw, const std::vector<uint8_t> &dstpr,
+                                          const uint16_t opcode);
 std::vector<uint8_t> get_mac_from_arp(const full_arp_packet *arp_response);
 
 void setup_ethernet_header(ethernet_header &eth, const std::vector<uint8_t> &dst, const std::vector<uint8_t> &src, uint16_t type);
+
+void setup_ip_header(ip_header &ip, uint8_t protocol, std::vector<uint8_t> src_ip, std::vector<uint8_t> dst_ip, uint16_t total_length);
+
+void setup_udp_header(udp_header &udp, std::vector<uint8_t> src_ip, std::vector<uint8_t> dst_ip, uint16_t length,
+                      uint16_t dst_port, uint16_t src_port);

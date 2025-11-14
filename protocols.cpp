@@ -50,18 +50,17 @@ void setup_ip_header(ip_header &ip, uint8_t protocol, std::vector<uint8_t> src_i
     ip.protocol = protocol;
     memcpy(&ip.dst_ip, dst_ip.data(), sizeof(ip.dst_ip));
     memcpy(&ip.src_ip, src_ip.data(), sizeof(ip.src_ip));
-    int total = 0;
-    uint8_t *header = reinterpret_cast<uint8_t *>(&ip);
-    for (int i = sizeof(ethernet_header); i + 1 < (sizeof(ip_header) - sizeof(ethernet_header)); i = i + 2)
+    unsigned int total = 0;
+    uint16_t *header = reinterpret_cast<uint16_t *>(&ip.version_ihl);
+    for (int i = 0; i < (sizeof(ip_header) - sizeof(ethernet_header)) / 2; i++)
     {
-        total += (header[i] << 8) | header[i + 1];
+        total += ntohs(header[i]);
     }
-    while (total > 0xFFFF)
+    while (total >> 16)
     {
-        total = (total >> 8) + (total & 0xFFFF);
+        total = (total >> 16) + (total & 0xFFFF);
     }
-    total = ~total;
-    ip.header_checksum = htons(total);
+    ip.header_checksum = htons(~total);
     std::vector<uint8_t> target_mac = arp_lookup(dst_ip);
     setup_ethernet_header(ip.eth, target_mac, PRETEND_MAC, ETHERNET_TYPE_IPV4);
 }
@@ -69,7 +68,9 @@ void setup_ip_header(ip_header &ip, uint8_t protocol, std::vector<uint8_t> src_i
 void setup_udp_header(udp_header &udp, std::vector<uint8_t> src_ip, std::vector<uint8_t> dst_ip, uint16_t length,
                       uint16_t dst_port, uint16_t src_port)
 {
-    setup_ip_header(udp.ip, 17, src_ip, dst_ip, length + sizeof(udp_header) - sizeof(ip_header));
+    int udp_len = length + sizeof(udp_header) - sizeof(ip_header);
+    setup_ip_header(udp.ip, 17, src_ip, dst_ip, udp_len);
     udp.dst_port = htons(dst_port);
     udp.src_port = htons(src_port);
+    udp.length = udp_len;
 }

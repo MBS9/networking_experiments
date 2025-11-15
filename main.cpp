@@ -98,10 +98,10 @@ std::vector<uint8_t> arp_lookup(std::vector<uint8_t> ip)
 
 bool arp_reply()
 {
+    uint8_t pretend_ip[] = PRETEND_IP;
     uint8_t buffer[MAX_ETHERNET_FRAME_SIZE];
     int bytes_received = 0;
     ethernet_header *eth = reinterpret_cast<ethernet_header *>(buffer);
-    eth->type = 0;
     while (true)
     {
         std::memset(&buffer, 0, sizeof(buffer));
@@ -110,13 +110,13 @@ bool arp_reply()
         switch (eth->type)
         {
         case ETHERNET_TYPE_ARP:
+        {
             full_arp_packet *arp_response = reinterpret_cast<full_arp_packet *>(buffer);
 
             if (bytes_received < sizeof(full_arp_packet))
             {
                 throw std::runtime_error("Received packet is smaller than an ARP packet.");
             }
-            uint8_t pretend_ip[] = PRETEND_IP;
             if (std::memcmp(arp_response->dstpr, pretend_ip, sizeof(pretend_ip)) == 0)
             {
                 auto arp_packet = create_arp_packet(
@@ -124,17 +124,24 @@ bool arp_reply()
                     PRETEND_IP,  // Source IP
                     std::vector(arp_response->srchw, arp_response->srchw + 6),
                     std::vector(arp_response->srcpr, arp_response->srcpr + 4),
-                    ARP_REPLY);
+                    ARP_REPLY
+                );
                 int bytes_sent = send_frame(tun_fd, reinterpret_cast<const uint8_t *>(arp_packet.get()), sizeof(full_arp_packet));
                 if (bytes_sent != sizeof(full_arp_packet))
                 {
                     throw std::runtime_error("Failed to send complete ARP request packet.");
                 }
             }
-            break;
+        }
+        break;
 
         case ETHERNET_TYPE_IPV4:
+        {
             ip_header *ip = reinterpret_cast<ip_header *>(buffer);
+            if (std::memcmp(reinterpret_cast<uint8_t *>(&ip->dst_ip), pretend_ip, sizeof(pretend_ip)) != 0)
+            {
+                continue;
+            }
             if (ip->protocol == IP_PROTOCOL_ICMP)
             {
                 icmp *req = reinterpret_cast<icmp *>(buffer);
@@ -144,7 +151,8 @@ bool arp_reply()
                     int bytes_sent = send_frame(tun_fd, reinterpret_cast<const uint8_t *>(reply.get()), bytes_received);
                 }
             }
-            break;
+        }
+        break;
         default:
             break;
         }

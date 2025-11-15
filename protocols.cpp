@@ -102,14 +102,23 @@ void setup_udp_header(udp_header &udp, std::vector<uint8_t> src_ip, std::vector<
     udp.checksum = htons(static_cast<uint16_t>(total));
 }
 
-std::unique_ptr<icmp> icmp_ping_reply(icmp &msg, unsigned int buf_len)
+static void icmp_array_deleter_fn(icmp *p)
 {
-    auto reply = std::make_unique<icmp>();
+    ::operator delete[](static_cast<void *>(p));
+}
+
+std::unique_ptr<icmp, void (*)(icmp *)> icmp_ping_reply(icmp &msg, unsigned int buf_len)
+{
+    uint8_t *buf = new uint8_t[buf_len];
+    icmp *typed_buf = reinterpret_cast<icmp *>(buf);
+    std::unique_ptr<icmp, void (*)(icmp *)> reply(typed_buf, icmp_array_deleter_fn);
     uint8_t *dst_ip = reinterpret_cast<uint8_t *>(msg.ip.dst_ip);
     uint8_t *src_ip = reinterpret_cast<uint8_t *>(msg.ip.src_ip);
     setup_ip_header(reply->ip, IP_PROTOCOL_ICMP, std::vector(dst_ip, dst_ip + 4),
                     std::vector(src_ip, src_ip + 4), buf_len - sizeof(ethernet_header));
     memcpy(reply->data, msg.data, buf_len - sizeof(icmp));
     reply->type = ICMP_TYPE_ECHO_REPLY;
+    unsigned int total = 0;
+    finish_checksum(&total, reinterpret_cast<uint16_t *>(&typed_buf->type), buf_len - sizeof(ip_header));
     return reply;
 }

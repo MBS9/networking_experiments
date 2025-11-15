@@ -107,7 +107,7 @@ bool arp_reply()
         std::memset(&buffer, 0, sizeof(buffer));
         bytes_received = receive_frame(tun_fd, buffer, sizeof(buffer));
 
-        switch (eth->type)
+        switch (ntohs(eth->type))
         {
         case ETHERNET_TYPE_ARP:
         {
@@ -138,7 +138,7 @@ bool arp_reply()
         case ETHERNET_TYPE_IPV4:
         {
             ip_header *ip = reinterpret_cast<ip_header *>(buffer);
-            if (std::memcmp(reinterpret_cast<uint8_t *>(&ip->dst_ip), pretend_ip, sizeof(pretend_ip)) != 0)
+            if (std::memcmp(reinterpret_cast<uint8_t *>(&ip->dst_ip), &pretend_ip, sizeof(pretend_ip)) != 0)
             {
                 continue;
             }

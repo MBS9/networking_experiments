@@ -152,10 +152,10 @@ int main()
         std::cout << "Hit enter to begin sending ARP packets..." << std::endl;
         std::cin.get();
         udp_header *p1 = reinterpret_cast<udp_header *>(new uint8_t[sizeof(udp_header) + 2]);
-        setup_udp_header(*p1, PRETEND_IP, GATEWAY_IP, 2, 1, 1);
         memcpy(p1->data, "s", 2);
+        setup_udp_header(*p1, PRETEND_IP, GATEWAY_IP, 2, 1, 1);
         send_frame(tun_fd, reinterpret_cast<const uint8_t *>(p1), sizeof(udp_header) + 2);
-        std::cout << arp_reply() << std::endl;
+        arp_reply();
         std::cout << "Exiting!" << std::endl;
         std::cin.get();
         close(tun_fd);

@@ -9,6 +9,7 @@
 #define HARDWARE_ADDR_LEN 6
 #define IP_ADDR_LEN 4
 #define MAX_ETHERNET_FRAME_SIZE 1518
+#define IP_PROTOCOL_UDP 17
 
 struct ethernet_header
 {

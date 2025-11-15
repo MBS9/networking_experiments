@@ -39,6 +39,19 @@ void setup_ethernet_header(ethernet_header &eth, const std::vector<uint8_t> &dst
     eth.type = htons(type);
 }
 
+void finish_checksum(unsigned int *total, uint16_t *data, unsigned int len)
+{
+    for (int i = 0; i < len / 2; i++)
+    {
+        *total += ntohs(data[i]);
+    }
+    while (*total >> 16)
+    {
+        *total = (*total >> 16) + (*total & 0xFFFF);
+    }
+    *total = ~*total;
+}
+
 void setup_ip_header(ip_header &ip, uint8_t protocol, std::vector<uint8_t> src_ip, std::vector<uint8_t> dst_ip, uint16_t total_length)
 {
     ip.version_ihl = (4 << 4) | (sizeof(ip_header) - sizeof(ethernet_header)) / 4;
@@ -52,15 +65,8 @@ void setup_ip_header(ip_header &ip, uint8_t protocol, std::vector<uint8_t> src_i
     memcpy(&ip.src_ip, src_ip.data(), sizeof(ip.src_ip));
     unsigned int total = 0;
     uint16_t *header = reinterpret_cast<uint16_t *>(&ip.version_ihl);
-    for (int i = 0; i < (sizeof(ip_header) - sizeof(ethernet_header)) / 2; i++)
-    {
-        total += ntohs(header[i]);
-    }
-    while (total >> 16)
-    {
-        total = (total >> 16) + (total & 0xFFFF);
-    }
-    ip.header_checksum = htons(~total);
+    finish_checksum(&total, header, sizeof(ip_header) - sizeof(ethernet_header));
+    ip.header_checksum = htons(static_cast<uint16_t>(total));
     std::vector<uint8_t> target_mac = arp_lookup(dst_ip);
     setup_ethernet_header(ip.eth, target_mac, PRETEND_MAC, ETHERNET_TYPE_IPV4);
 }
@@ -68,9 +74,29 @@ void setup_ip_header(ip_header &ip, uint8_t protocol, std::vector<uint8_t> src_i
 void setup_udp_header(udp_header &udp, std::vector<uint8_t> src_ip, std::vector<uint8_t> dst_ip, uint16_t length,
                       uint16_t dst_port, uint16_t src_port)
 {
-    int udp_len = length + sizeof(udp_header) - sizeof(ip_header);
-    setup_ip_header(udp.ip, 17, src_ip, dst_ip, udp_len);
+    uint16_t udp_len = length + sizeof(udp_header) - sizeof(ip_header);
+    setup_ip_header(udp.ip, IP_PROTOCOL_UDP, src_ip, dst_ip, udp_len);
     udp.dst_port = htons(dst_port);
     udp.src_port = htons(src_port);
-    udp.length = udp_len;
+    udp.length = htons(udp_len);
+    udp.checksum = 0;
+    unsigned int total = 0;
+    total += (src_ip[0] << 8) | src_ip[1];
+    total += (src_ip[2] << 8) | src_ip[3];
+    total += (dst_ip[0] << 8) | dst_ip[1];
+    total += (dst_ip[2] << 8) | dst_ip[3];
+    total += IP_PROTOCOL_UDP;
+    total += udp_len;
+    int i;
+    for (i = 0; i < length - 1; i += 2)
+    {
+        total += (udp.data[i] << 8) | udp.data[i + 1];
+    }
+    if (length % 2 == 1)
+    {
+        total += (udp.data[length - 1] << 8);
+    }
+    uint16_t *header = reinterpret_cast<uint16_t *>(&udp.src_port);
+    finish_checksum(&total, header, sizeof(udp_header) - sizeof(ip_header));
+    udp.checksum = htons(static_cast<uint16_t>(total));
 }

@@ -2,14 +2,15 @@
 #include <vector>
 #include <cstring>
 #include <stdexcept>
+#include <memory>
 #include "protocols.h"
 #include "main.h"
 
-struct full_arp_packet *create_arp_packet(const std::vector<uint8_t> &srchw, const std::vector<uint8_t> &srcpr,
-                                          const std::vector<uint8_t> &dsthw, const std::vector<uint8_t> &dstpr,
-                                          const uint16_t opcode)
+std::unique_ptr<full_arp_packet> create_arp_packet(const std::vector<uint8_t> &srchw, const std::vector<uint8_t> &srcpr,
+                                                   const std::vector<uint8_t> &dsthw, const std::vector<uint8_t> &dstpr,
+                                                   const uint16_t opcode)
 {
-    struct full_arp_packet *packet = new full_arp_packet{};
+    auto packet = std::make_unique<full_arp_packet>();
     setup_ethernet_header(packet->eth, dsthw, srchw, ETHERNET_TYPE_ARP);
     packet->htype = htons(HARDWARE_TYPE_ETHERNET);
     packet->ptype = htons(PROTOCOL_TYPE_IPv4);
@@ -99,4 +100,16 @@ void setup_udp_header(udp_header &udp, std::vector<uint8_t> src_ip, std::vector<
     uint16_t *header = reinterpret_cast<uint16_t *>(&udp.src_port);
     finish_checksum(&total, header, sizeof(udp_header) - sizeof(ip_header));
     udp.checksum = htons(static_cast<uint16_t>(total));
+}
+
+std::unique_ptr<icmp> icmp_ping_reply(icmp &msg, unsigned int buf_len)
+{
+    auto reply = std::make_unique<icmp>();
+    uint8_t *dst_ip = reinterpret_cast<uint8_t *>(msg.ip.dst_ip);
+    uint8_t *src_ip = reinterpret_cast<uint8_t *>(msg.ip.src_ip);
+    setup_ip_header(reply->ip, IP_PROTOCOL_ICMP, std::vector(dst_ip, dst_ip + 4),
+                    std::vector(src_ip, src_ip + 4), buf_len - sizeof(ethernet_header));
+    memcpy(reply->data, msg.data, buf_len - sizeof(icmp));
+    reply->type = ICMP_TYPE_ECHO_REPLY;
+    return reply;
 }

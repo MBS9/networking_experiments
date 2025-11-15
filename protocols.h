@@ -1,6 +1,7 @@
 // Thank you https://wiki.osdev.org/Address_Resolution_Protocol
 #include <cstdint>
 #include <vector>
+#include <memory>
 
 #define MAC_BROADCAST {0xff, 0xff, 0xff, 0xff, 0xff, 0xff}
 
@@ -10,6 +11,7 @@
 #define IP_ADDR_LEN 4
 #define MAX_ETHERNET_FRAME_SIZE 1518
 #define IP_PROTOCOL_UDP 17
+#define IP_PROTOCOL_ICMP 1
 
 struct ethernet_header
 {
@@ -62,9 +64,22 @@ struct udp_header
     char data[];
 } __attribute__((packed));
 
-struct full_arp_packet *create_arp_packet(const std::vector<uint8_t> &srchw, const std::vector<uint8_t> &srcpr,
-                                          const std::vector<uint8_t> &dsthw, const std::vector<uint8_t> &dstpr,
-                                          const uint16_t opcode);
+struct icmp
+{
+    ip_header ip;
+    uint8_t type;
+    uint8_t code;
+    uint16_t checksum;
+    uint32_t extended_header;
+    char data[];
+} __attribute__((packed));
+
+#define ICMP_TYPE_ECHO_REQUEST 8
+#define ICMP_TYPE_ECHO_REPLY 0
+
+std::unique_ptr<full_arp_packet> create_arp_packet(const std::vector<uint8_t> &srchw, const std::vector<uint8_t> &srcpr,
+                                                   const std::vector<uint8_t> &dsthw, const std::vector<uint8_t> &dstpr,
+                                                   const uint16_t opcode);
 std::vector<uint8_t> get_mac_from_arp(const full_arp_packet *arp_response);
 
 void setup_ethernet_header(ethernet_header &eth, const std::vector<uint8_t> &dst, const std::vector<uint8_t> &src, uint16_t type);
@@ -73,3 +88,4 @@ void setup_ip_header(ip_header &ip, uint8_t protocol, std::vector<uint8_t> src_i
 
 void setup_udp_header(udp_header &udp, std::vector<uint8_t> src_ip, std::vector<uint8_t> dst_ip, uint16_t length,
                       uint16_t dst_port, uint16_t src_port);
+std::unique_ptr<icmp> icmp_ping_reply(icmp &msg, unsigned int buf_len);

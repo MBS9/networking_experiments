@@ -69,14 +69,13 @@ int receive_frame(int fd, uint8_t *buffer, size_t len)
 
 std::vector<uint8_t> arp_lookup(std::vector<uint8_t> ip)
 {
-    const full_arp_packet *arp_packet = create_arp_packet(
+    auto arp_packet = create_arp_packet(
         PRETEND_MAC,   // Source MAC
         PRETEND_IP,    // Source IP
         MAC_BROADCAST, // Destination MAC (Broadcast)
         ip,            // Destination IP,
         ARP_REQUEST);
-    int bytes_sent = send_frame(tun_fd, reinterpret_cast<const uint8_t *>(arp_packet), sizeof(full_arp_packet));
-    delete arp_packet;
+    int bytes_sent = send_frame(tun_fd, reinterpret_cast<const uint8_t *>(arp_packet.get()), sizeof(full_arp_packet));
     if (bytes_sent != sizeof(full_arp_packet))
     {
         throw std::runtime_error("Failed to send complete ARP request packet.");
@@ -101,37 +100,54 @@ bool arp_reply()
 {
     uint8_t buffer[MAX_ETHERNET_FRAME_SIZE];
     int bytes_received = 0;
-    full_arp_packet *arp_response = reinterpret_cast<full_arp_packet *>(buffer);
-    arp_response->eth.type = 0;
-    while (ntohs(arp_response->eth.type) != ETHERNET_TYPE_ARP || ntohs(arp_response->opcode) != ARP_REQUEST)
+    ethernet_header *eth = reinterpret_cast<ethernet_header *>(buffer);
+    eth->type = 0;
+    while (true)
     {
-        std::memset(buffer, 0, sizeof(buffer));
+        std::memset(&buffer, 0, sizeof(buffer));
         bytes_received = receive_frame(tun_fd, buffer, sizeof(buffer));
-    }
-    if (bytes_received < sizeof(full_arp_packet))
-    {
-        throw std::runtime_error("Received packet is smaller than an ARP packet.");
-    }
-    uint8_t pretend_ip[] = PRETEND_IP;
-    if (std::memcmp(arp_response->dstpr, pretend_ip, sizeof(pretend_ip)) == 0)
-    {
-        full_arp_packet *arp_packet = create_arp_packet(
-            PRETEND_MAC, // Source MAC
-            PRETEND_IP,  // Source IP
-            std::vector(arp_response->srchw, arp_response->srchw + 6),
-            std::vector(arp_response->srcpr, arp_response->srcpr + 4),
-            ARP_REPLY);
-        int bytes_sent = send_frame(tun_fd, reinterpret_cast<const uint8_t *>(arp_packet), sizeof(full_arp_packet));
-        delete arp_packet;
-        if (bytes_sent != sizeof(full_arp_packet))
+
+        switch (eth->type)
         {
-            throw std::runtime_error("Failed to send complete ARP request packet.");
+        case ETHERNET_TYPE_ARP:
+            full_arp_packet *arp_response = reinterpret_cast<full_arp_packet *>(buffer);
+
+            if (bytes_received < sizeof(full_arp_packet))
+            {
+                throw std::runtime_error("Received packet is smaller than an ARP packet.");
+            }
+            uint8_t pretend_ip[] = PRETEND_IP;
+            if (std::memcmp(arp_response->dstpr, pretend_ip, sizeof(pretend_ip)) == 0)
+            {
+                auto arp_packet = create_arp_packet(
+                    PRETEND_MAC, // Source MAC
+                    PRETEND_IP,  // Source IP
+                    std::vector(arp_response->srchw, arp_response->srchw + 6),
+                    std::vector(arp_response->srcpr, arp_response->srcpr + 4),
+                    ARP_REPLY);
+                int bytes_sent = send_frame(tun_fd, reinterpret_cast<const uint8_t *>(arp_packet.get()), sizeof(full_arp_packet));
+                if (bytes_sent != sizeof(full_arp_packet))
+                {
+                    throw std::runtime_error("Failed to send complete ARP request packet.");
+                }
+            }
+            break;
+
+        case ETHERNET_TYPE_IPV4:
+            ip_header *ip = reinterpret_cast<ip_header *>(buffer);
+            if (ip->protocol == IP_PROTOCOL_ICMP)
+            {
+                icmp *req = reinterpret_cast<icmp *>(buffer);
+                if (req->type == ICMP_TYPE_ECHO_REQUEST)
+                {
+                    auto reply = icmp_ping_reply(*req, bytes_received);
+                    int bytes_sent = send_frame(tun_fd, reinterpret_cast<const uint8_t *>(reply.get()), bytes_received);
+                }
+            }
+            break;
+        default:
+            break;
         }
-        return true;
-    }
-    else
-    {
-        return false;
     }
 }
 

@@ -142,9 +142,19 @@ bool arp_reply()
             {
                 continue;
             }
+            if (!verify_ip_checksum(ip))
+            {
+                std::cout << "Bad IP checksum detected" << std::endl;
+                continue;
+            }
             if (ip->protocol == IP_PROTOCOL_ICMP)
             {
                 icmp *req = reinterpret_cast<icmp *>(buffer);
+                if (!verify_icmp_checksum(req, bytes_received))
+                {
+                    std::cout << "Bad ICMP checksum detected" << std::endl;
+                    continue;
+                }
                 if (req->type == ICMP_TYPE_ECHO_REQUEST)
                 {
                     auto reply = icmp_ping_reply(*req, bytes_received);
@@ -173,7 +183,7 @@ int main()
         }
         system(("ip addr add " + std::string(GATEWAY_IP_WITH_SUBNET_MASK) + " dev " + std::string(name)).c_str());
         std::cout << "TAP interface '" << name << "' created with file descriptor: " << tun_fd << std::endl;
-        std::cout << "Hit enter to begin sending ARP packets..." << std::endl;
+        std::cout << "Hit enter to begin sending packets..." << std::endl;
         std::cin.get();
         udp_header *p1 = reinterpret_cast<udp_header *>(new uint8_t[sizeof(udp_header) + 2]);
         memcpy(p1->data, "s", 2);

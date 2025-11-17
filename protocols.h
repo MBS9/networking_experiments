@@ -89,3 +89,5 @@ void setup_ip_header(ip_header &ip, uint8_t protocol, std::vector<uint8_t> src_i
 void setup_udp_header(udp_header &udp, std::vector<uint8_t> src_ip, std::vector<uint8_t> dst_ip, uint16_t length,
                       uint16_t dst_port, uint16_t src_port);
 std::unique_ptr<icmp, void (*)(icmp *)> icmp_ping_reply(icmp &msg, unsigned int buf_len);
+bool verify_icmp_checksum(icmp *msg, int buf_len);
+bool verify_ip_checksum(ip_header *msg);

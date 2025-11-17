@@ -124,7 +124,30 @@ std::unique_ptr<icmp, void (*)(icmp *)> icmp_ping_reply(icmp &msg, unsigned int 
     reply->checksum = 0;
     reply->code = 0;
     unsigned int total = 0;
+    if (buf_len % 2 == 1)
+    {
+        total += (msg.data[buf_len - 1] << 8);
+    }
     finish_checksum(&total, reinterpret_cast<uint16_t *>(&typed_buf->type), buf_len - sizeof(ip_header));
     reply->checksum = htons(static_cast<uint16_t>(total));
     return reply;
+}
+
+bool verify_icmp_checksum(icmp *msg, int buf_len)
+{
+    unsigned int total = 0;
+    if (buf_len % 2 == 1)
+    {
+        total += (msg->data[buf_len - 1] << 8);
+    }
+    finish_checksum(&total, reinterpret_cast<uint16_t *>(&msg->type), buf_len - sizeof(ip_header));
+    return total == 0;
+}
+
+bool verify_ip_checksum(ip_header *msg)
+{
+    unsigned int total = 0;
+    uint16_t *header = reinterpret_cast<uint16_t *>(&msg->version_ihl);
+    finish_checksum(&total, header, sizeof(ip_header) - sizeof(ethernet_header));
+    return total == 0;
 }

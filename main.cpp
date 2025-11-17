@@ -84,7 +84,7 @@ std::vector<uint8_t> arp_lookup(std::vector<uint8_t> ip)
     int bytes_received = 0;
     full_arp_packet *arp_response = reinterpret_cast<full_arp_packet *>(buffer);
     arp_response->eth.type = 0;
-    while (ntohs(arp_response->eth.type) != ETHERNET_TYPE_ARP)
+    while (ntohs(arp_response->eth.type) != ETHERNET_TYPE_ARP || ntohs(arp_response->opcode) != ARP_REPLY || memcmp(arp_response->srcpr, ip.data(), 4) != 0)
     {
         std::memset(buffer, 0, sizeof(buffer));
         bytes_received = receive_frame(tun_fd, buffer, sizeof(buffer));

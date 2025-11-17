@@ -2,6 +2,7 @@
 #include <vector>
 #include <cstring>
 #include <stdexcept>
+#include <iostream>
 #include <memory>
 #include "protocols.h"
 #include "main.h"
@@ -62,6 +63,7 @@ void setup_ip_header(ip_header &ip, uint8_t protocol, std::vector<uint8_t> src_i
     ip.flags_fragment_offset = htons((1 << 14));
     ip.ttl = 255;
     ip.protocol = protocol;
+    ip.header_checksum = 0;
     memcpy(&ip.dst_ip, dst_ip.data(), sizeof(ip.dst_ip));
     memcpy(&ip.src_ip, src_ip.data(), sizeof(ip.src_ip));
     unsigned int total = 0;
@@ -112,12 +114,15 @@ std::unique_ptr<icmp, void (*)(icmp *)> icmp_ping_reply(icmp &msg, unsigned int 
     uint8_t *buf = new uint8_t[buf_len];
     icmp *typed_buf = reinterpret_cast<icmp *>(buf);
     std::unique_ptr<icmp, void (*)(icmp *)> reply(typed_buf, icmp_array_deleter_fn);
-    uint8_t *dst_ip = reinterpret_cast<uint8_t *>(msg.ip.dst_ip);
-    uint8_t *src_ip = reinterpret_cast<uint8_t *>(msg.ip.src_ip);
+    uint8_t *dst_ip = reinterpret_cast<uint8_t *>(&msg.ip.dst_ip);
+    uint8_t *src_ip = reinterpret_cast<uint8_t *>(&msg.ip.src_ip);
     setup_ip_header(reply->ip, IP_PROTOCOL_ICMP, std::vector<uint8_t>(dst_ip, dst_ip + 4),
                     std::vector<uint8_t>(src_ip, src_ip + 4), buf_len - sizeof(ip_header));
     memcpy(&reply->data, &msg.data, buf_len - sizeof(icmp));
     reply->type = ICMP_TYPE_ECHO_REPLY;
+    reply->extended_header = msg.extended_header;
+    reply->checksum = 0;
+    reply->code = 0;
     unsigned int total = 0;
     finish_checksum(&total, reinterpret_cast<uint16_t *>(&typed_buf->type), buf_len - sizeof(ip_header));
     reply->checksum = htons(static_cast<uint16_t>(total));

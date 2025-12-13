@@ -14,6 +14,8 @@
 #include "protocols.h"
 #include "main.h"
 
+#define TAP0 "tap0"
+
 int tun_fd;
 
 int tun_alloc(char *dev)
@@ -173,7 +175,7 @@ int main()
 {
     char name[IFNAMSIZ];
     std::memset(name, 0, IFNAMSIZ);
-    std::strncpy(name, "tap0", strlen("tap0"));
+    std::strncpy(name, TAP0, strlen(TAP0));
     try
     {
         tun_fd = tun_alloc(name);

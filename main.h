@@ -1,6 +1,8 @@
 #include <vector>
 #include <cstdint>
 
+#define SUBNET_MASK {255, 255, 255, 0}
+
 // The below refer to the ip and mac address assigned to the current computer
 // Since the tap interface isn't connected to any network, these can be arbitrary
 #define GATEWAY_IP {10, 0, 0, 1}

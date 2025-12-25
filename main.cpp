@@ -10,6 +10,7 @@
 #include <cstring>
 #include <iostream>
 #include <cerrno>
+#include <map>
 
 #include "protocols.h"
 #include "main.h"
@@ -17,6 +18,8 @@
 #define TAP0 "tap0"
 
 int tun_fd;
+
+std::map<std::vector<uint8_t>, std::vector<uint8_t>> arp_cache;
 
 int tun_alloc(char *dev)
 {
@@ -71,11 +74,38 @@ int receive_frame(int fd, uint8_t *buffer, size_t len)
 
 std::vector<uint8_t> arp_lookup(std::vector<uint8_t> ip)
 {
+    // Check if IP is on the same network as PRETEND_IP
+    if (ip.size() != 4)
+    {
+        throw std::runtime_error("IP of invalid length");
+    }
+    uint8_t network_addr1[] = PRETEND_IP;
+    std::vector<uint8_t> copy_ip(ip);
+    uint8_t *network_addr2 = copy_ip.data();
+    uint8_t subnet_mask[] = SUBNET_MASK;
+    for (int i = 0; i < 4; i++)
+    {
+        network_addr1[i] &= subnet_mask[i];
+        network_addr2[i] &= subnet_mask[i];
+    }
+    if (memcmp(network_addr2, &network_addr1, 4) != 0)
+    {
+        copy_ip = GATEWAY_IP;
+    }
+    else
+    {
+        copy_ip = ip;
+    }
+    auto mac_ip = arp_cache.find(copy_ip);
+    if (mac_ip != arp_cache.end())
+    {
+        return arp_cache[copy_ip];
+    }
     auto arp_packet = create_arp_packet(
         PRETEND_MAC,   // Source MAC
         PRETEND_IP,    // Source IP
         MAC_BROADCAST, // Destination MAC (Broadcast)
-        ip,            // Destination IP,
+        copy_ip,       // Destination IP,
         ARP_REQUEST);
     int bytes_sent = send_frame(tun_fd, reinterpret_cast<const uint8_t *>(arp_packet.get()), sizeof(full_arp_packet));
     if (bytes_sent != sizeof(full_arp_packet))
@@ -95,7 +125,10 @@ std::vector<uint8_t> arp_lookup(std::vector<uint8_t> ip)
     {
         throw std::runtime_error("Received packet is smaller than an ARP packet.");
     }
-    return get_mac_from_arp(arp_response);
+
+    auto mac = get_mac_from_arp(arp_response);
+    arp_cache[copy_ip] = mac;
+    return mac;
 }
 
 bool arp_reply()

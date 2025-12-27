@@ -220,10 +220,9 @@ int main()
         std::cout << "TAP interface '" << name << "' created with file descriptor: " << tun_fd << std::endl;
         std::cout << "Hit enter to begin sending packets..." << std::endl;
         std::cin.get();
-        udp_header *p1 = reinterpret_cast<udp_header *>(new uint8_t[sizeof(udp_header) + 2]);
-        memcpy(p1->data, "s", 2);
-        setup_udp_header(*p1, PRETEND_IP, GATEWAY_IP, 2, 1, 1);
-        send_frame(tun_fd, reinterpret_cast<const uint8_t *>(p1), sizeof(udp_header) + 2);
+        size_t packet_size;
+        auto p1 = dns_make_query("google.com", 2, PRETEND_IP, GATEWAY_IP, &packet_size);
+        send_frame(tun_fd, p1.get(), packet_size);
         arp_reply();
         std::cout << "Exiting!" << std::endl;
         std::cin.get();

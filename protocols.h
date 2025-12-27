@@ -61,7 +61,6 @@ struct udp_header
     uint16_t dst_port; // Destination port
     uint16_t length;   // Length of UDP header and payload
     uint16_t checksum; // Checksum
-    char data[];
 } __attribute__((packed));
 
 struct icmp
@@ -74,6 +73,17 @@ struct icmp
     char data[];
 } __attribute__((packed));
 
+struct dns_header
+{
+    udp_header udp;
+    uint16_t id;
+    uint16_t flags;
+    uint16_t qdcount;
+    uint16_t ancount;
+    uint16_t nscount;
+    uint16_t arcount;
+} __attribute__((packed));
+
 #define ICMP_TYPE_ECHO_REQUEST 8
 #define ICMP_TYPE_ECHO_REPLY 0
 
@@ -81,13 +91,7 @@ std::unique_ptr<full_arp_packet> create_arp_packet(const std::vector<uint8_t> &s
                                                    const std::vector<uint8_t> &dsthw, const std::vector<uint8_t> &dstpr,
                                                    const uint16_t opcode);
 std::vector<uint8_t> get_mac_from_arp(const full_arp_packet *arp_response);
-
-void setup_ethernet_header(ethernet_header &eth, const std::vector<uint8_t> &dst, const std::vector<uint8_t> &src, uint16_t type);
-
-void setup_ip_header(ip_header &ip, uint8_t protocol, std::vector<uint8_t> src_ip, std::vector<uint8_t> dst_ip, uint16_t total_length);
-
-void setup_udp_header(udp_header &udp, std::vector<uint8_t> src_ip, std::vector<uint8_t> dst_ip, uint16_t length,
-                      uint16_t dst_port, uint16_t src_port);
-std::unique_ptr<icmp, void (*)(icmp *)> icmp_ping_reply(icmp &msg, unsigned int buf_len);
+std::unique_ptr<uint8_t[]> icmp_ping_reply(icmp &msg, unsigned int buf_len);
 bool verify_icmp_checksum(icmp *msg, int buf_len);
 bool verify_ip_checksum(ip_header *msg);
+std::unique_ptr<uint8_t[]> dns_make_query(std::string domain, uint16_t query_id, std::vector<uint8_t> src_ip, std::vector<uint8_t> dst_ip, size_t *packet_size);

@@ -7,6 +7,13 @@
 #include "protocols.h"
 #include "main.h"
 
+void setup_ethernet_header(ethernet_header &eth, const std::vector<uint8_t> &dst, const std::vector<uint8_t> &src, uint16_t type)
+{
+    std::memcpy(eth.dst, dst.data(), HARDWARE_ADDR_LEN);
+    std::memcpy(eth.src, src.data(), HARDWARE_ADDR_LEN);
+    eth.type = htons(type);
+}
+
 std::unique_ptr<full_arp_packet> create_arp_packet(const std::vector<uint8_t> &srchw, const std::vector<uint8_t> &srcpr,
                                                    const std::vector<uint8_t> &dsthw, const std::vector<uint8_t> &dstpr,
                                                    const uint16_t opcode)
@@ -32,13 +39,6 @@ std::vector<uint8_t> get_mac_from_arp(const full_arp_packet *arp_response)
         throw std::runtime_error("Received packet is not an ARP reply.");
     }
     return std::vector<uint8_t>(arp_response->srchw, arp_response->srchw + HARDWARE_ADDR_LEN);
-}
-
-void setup_ethernet_header(ethernet_header &eth, const std::vector<uint8_t> &dst, const std::vector<uint8_t> &src, uint16_t type)
-{
-    std::memcpy(eth.dst, dst.data(), HARDWARE_ADDR_LEN);
-    std::memcpy(eth.src, src.data(), HARDWARE_ADDR_LEN);
-    eth.type = htons(type);
 }
 
 void finish_checksum(unsigned int *total, uint16_t *data, unsigned int len)
@@ -77,7 +77,9 @@ void setup_ip_header(ip_header &ip, uint8_t protocol, std::vector<uint8_t> src_i
 void setup_udp_header(udp_header &udp, std::vector<uint8_t> src_ip, std::vector<uint8_t> dst_ip, uint16_t length,
                       uint16_t dst_port, uint16_t src_port)
 {
-    uint16_t udp_len = length + sizeof(udp_header) - sizeof(ip_header);
+    uint16_t udp_len = length - sizeof(ip_header);
+    size_t data_len = length - sizeof(udp_header);
+    uint8_t *data = reinterpret_cast<uint8_t *>(&udp) + sizeof(udp_header);
     setup_ip_header(udp.ip, IP_PROTOCOL_UDP, src_ip, dst_ip, udp_len);
     udp.dst_port = htons(dst_port);
     udp.src_port = htons(src_port);
@@ -91,29 +93,25 @@ void setup_udp_header(udp_header &udp, std::vector<uint8_t> src_ip, std::vector<
     total += IP_PROTOCOL_UDP;
     total += udp_len;
     int i;
-    for (i = 0; i < length - 1; i += 2)
+    for (i = 0; i < data_len - 1; i += 2)
     {
-        total += (udp.data[i] << 8) | udp.data[i + 1];
+        total += (data[i] << 8) | data[i + 1];
     }
-    if (length % 2 == 1)
+    if (data_len % 2 == 1)
     {
-        total += (udp.data[length - 1] << 8);
+        total += (data[data_len - 1] << 8);
     }
     uint16_t *header = reinterpret_cast<uint16_t *>(&udp.src_port);
     finish_checksum(&total, header, sizeof(udp_header) - sizeof(ip_header));
     udp.checksum = htons(static_cast<uint16_t>(total));
 }
 
-static void icmp_array_deleter_fn(icmp *p)
+std::unique_ptr<uint8_t[]> icmp_ping_reply(icmp &msg, unsigned int buf_len)
 {
-    ::operator delete[](static_cast<void *>(p));
-}
+    std::unique_ptr<uint8_t[]> buf(new uint8_t[buf_len]);
 
-std::unique_ptr<icmp, void (*)(icmp *)> icmp_ping_reply(icmp &msg, unsigned int buf_len)
-{
-    uint8_t *buf = new uint8_t[buf_len];
-    icmp *typed_buf = reinterpret_cast<icmp *>(buf);
-    std::unique_ptr<icmp, void (*)(icmp *)> reply(typed_buf, icmp_array_deleter_fn);
+    icmp *reply = reinterpret_cast<icmp *>(buf.get());
+
     uint8_t *dst_ip = reinterpret_cast<uint8_t *>(&msg.ip.dst_ip);
     uint8_t *src_ip = reinterpret_cast<uint8_t *>(&msg.ip.src_ip);
     setup_ip_header(reply->ip, IP_PROTOCOL_ICMP, std::vector<uint8_t>(dst_ip, dst_ip + 4),
@@ -128,9 +126,9 @@ std::unique_ptr<icmp, void (*)(icmp *)> icmp_ping_reply(icmp &msg, unsigned int 
     {
         total += (msg.data[buf_len - 1] << 8);
     }
-    finish_checksum(&total, reinterpret_cast<uint16_t *>(&typed_buf->type), buf_len - sizeof(ip_header));
+    finish_checksum(&total, reinterpret_cast<uint16_t *>(&reply->type), buf_len - sizeof(ip_header));
     reply->checksum = htons(static_cast<uint16_t>(total));
-    return reply;
+    return buf;
 }
 
 bool verify_icmp_checksum(icmp *msg, int buf_len)
@@ -150,4 +148,40 @@ bool verify_ip_checksum(ip_header *msg)
     uint16_t *header = reinterpret_cast<uint16_t *>(&msg->version_ihl);
     finish_checksum(&total, header, sizeof(ip_header) - sizeof(ethernet_header));
     return static_cast<uint16_t>(total) == 0;
+}
+
+std::unique_ptr<uint8_t[]> dns_make_query(std::string domain, uint16_t query_id, std::vector<uint8_t> src_ip, std::vector<uint8_t> dst_ip, size_t *packet_size)
+{
+    std::vector<std::string> labels;
+    size_t start = 0;
+    size_t next_dot = 0;
+    while (next_dot != std::string::npos)
+    {
+        next_dot = domain.find('.', start);
+        labels.push_back(domain.substr(start, next_dot - start));
+        start = next_dot + 1;
+    }
+    size_t length = sizeof(dns_header) + domain.length() + 1 + 4;
+    *packet_size = length;
+    std::unique_ptr<uint8_t[]> buf(new uint8_t[length]);
+    dns_header *typed_buf = reinterpret_cast<dns_header *>(buf.get());
+    uint8_t *qd = buf.get() + sizeof(dns_header);
+    typed_buf->id = htons(query_id);
+    typed_buf->flags = htons(0x0100);
+    typed_buf->qdcount = htons(1);
+    size_t label_start = 0;
+    for (size_t idx = 0; idx < labels.size(); idx++)
+    {
+        std::string label = labels[idx];
+        qd[label_start] = static_cast<uint8_t>(label.length());
+        memcpy(qd + label_start + 1, labels[idx].data(), label.length());
+        label_start += label.length() + 1;
+    }
+    // Set QTYPE = A and QCLASS = IN
+    qd[label_start] = 0;
+    qd[label_start + 1] = 1;
+    qd[label_start + 2] = 0;
+    qd[label_start + 3] = 1;
+    setup_udp_header(typed_buf->udp, src_ip, dst_ip, length, 53, 100);
+    return buf;
 }

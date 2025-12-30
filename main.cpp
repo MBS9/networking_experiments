@@ -221,7 +221,7 @@ int main()
         std::cout << "Hit enter to begin sending packets..." << std::endl;
         std::cin.get();
         size_t packet_size;
-        auto p1 = dns_make_query("google.com", 2, PRETEND_IP, GATEWAY_IP, &packet_size);
+        auto p1 = dns_make_query("google.com", 2, PRETEND_IP, DNS_IP, &packet_size);
         send_frame(tun_fd, p1.get(), packet_size);
         arp_reply();
         std::cout << "Exiting!" << std::endl;

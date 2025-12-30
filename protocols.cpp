@@ -161,7 +161,7 @@ std::unique_ptr<uint8_t[]> dns_make_query(std::string domain, uint16_t query_id,
         labels.push_back(domain.substr(start, next_dot - start));
         start = next_dot + 1;
     }
-    size_t length = sizeof(dns_header) + domain.length() + 1 + 4;
+    size_t length = sizeof(dns_header) + domain.length() + 2 + 4;
     *packet_size = length;
     std::unique_ptr<uint8_t[]> buf(new uint8_t[length]);
     dns_header *typed_buf = reinterpret_cast<dns_header *>(buf.get());
@@ -179,9 +179,10 @@ std::unique_ptr<uint8_t[]> dns_make_query(std::string domain, uint16_t query_id,
     }
     // Set QTYPE = A and QCLASS = IN
     qd[label_start] = 0;
-    qd[label_start + 1] = 1;
-    qd[label_start + 2] = 0;
-    qd[label_start + 3] = 1;
+    qd[label_start + 1] = 0;
+    qd[label_start + 2] = 1;
+    qd[label_start + 3] = 0;
+    qd[label_start + 4] = 1;
     setup_udp_header(typed_buf->udp, src_ip, dst_ip, length, 53, 100);
     return buf;
 }

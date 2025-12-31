@@ -80,7 +80,7 @@ uint16_t udp_checksum(udp_header *udp, size_t length)
     size_t data_len = length - sizeof(udp_header);
     uint8_t *src_ip = reinterpret_cast<uint8_t *>(&udp->ip.src_ip);
     uint8_t *dst_ip = reinterpret_cast<uint8_t *>(&udp->ip.dst_ip);
-    uint8_t *data = reinterpret_cast<uint8_t *>(&udp) + sizeof(udp_header);
+    uint8_t *data = reinterpret_cast<uint8_t *>(udp) + sizeof(udp_header);
     unsigned int total = 0;
     total += (src_ip[0] << 8) | src_ip[1];
     total += (src_ip[2] << 8) | src_ip[3];
@@ -229,13 +229,13 @@ std::string parse_label(uint8_t **cursor, uint8_t *dns_begin)
 std::tuple<std::string, std::vector<uint8_t>> parse_dns_response(dns_header *buf, size_t buf_len)
 {
     uint8_t *cursor = reinterpret_cast<uint8_t *>(buf) + sizeof(dns_header);
-    uint8_t *dns_begin = reinterpret_cast<uint8_t *>(buf->id);
-    size_t qdcount = buf->qdcount;
+    uint8_t *dns_begin = reinterpret_cast<uint8_t *>(&buf->id);
+    size_t qdcount = ntohs(buf->qdcount);
     for (int i = 0; i < qdcount; i++)
     {
         parse_label(&cursor, dns_begin);
     }
-    size_t ancount = buf->ancount;
+    size_t ancount = ntohs(buf->ancount);
     for (int i = 0; i < qdcount; i++)
     {
         auto domain = parse_label(&cursor, dns_begin);

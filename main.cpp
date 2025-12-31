@@ -205,7 +205,6 @@ void mainloop()
 
             case IP_PROTOCOL_UDP:
             {
-                std::cout << "Parsing DNS" << std::endl;
                 udp_header *udp = reinterpret_cast<udp_header *>(buffer);
                 if (!verify_udp_checksum(udp, bytes_received))
                 {
@@ -215,9 +214,9 @@ void mainloop()
                 {
                     // Assuming this is DNS response - how can I check for this?
                     dns_header *dns = reinterpret_cast<dns_header *>(buffer);
-                    if (dns->flags & 0xF != 0)
+                    if (ntohl(dns->flags) & 0xF != 0 || ntohl(dns->flags) & 0b1000000000000000)
                     {
-                        std::cout << "DNS ERROR DETECTED" << std::endl;
+                        std::cout << "Wrong DNS recieved" << std::endl;
                         continue;
                     }
                     std::string name;

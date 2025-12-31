@@ -4,6 +4,7 @@
 #include <stdexcept>
 #include <iostream>
 #include <memory>
+#include <tuple>
 #include "protocols.h"
 #include "main.h"
 
@@ -74,24 +75,19 @@ void setup_ip_header(ip_header &ip, uint8_t protocol, std::vector<uint8_t> src_i
     setup_ethernet_header(ip.eth, target_mac, PRETEND_MAC, ETHERNET_TYPE_IPV4);
 }
 
-void setup_udp_header(udp_header &udp, std::vector<uint8_t> src_ip, std::vector<uint8_t> dst_ip, uint16_t length,
-                      uint16_t dst_port, uint16_t src_port)
+uint16_t udp_checksum(udp_header *udp, size_t length)
 {
-    uint16_t udp_len = length - sizeof(ip_header);
     size_t data_len = length - sizeof(udp_header);
+    uint8_t *src_ip = reinterpret_cast<uint8_t *>(&udp->ip.src_ip);
+    uint8_t *dst_ip = reinterpret_cast<uint8_t *>(&udp->ip.dst_ip);
     uint8_t *data = reinterpret_cast<uint8_t *>(&udp) + sizeof(udp_header);
-    setup_ip_header(udp.ip, IP_PROTOCOL_UDP, src_ip, dst_ip, udp_len);
-    udp.dst_port = htons(dst_port);
-    udp.src_port = htons(src_port);
-    udp.length = htons(udp_len);
-    udp.checksum = 0;
     unsigned int total = 0;
     total += (src_ip[0] << 8) | src_ip[1];
     total += (src_ip[2] << 8) | src_ip[3];
     total += (dst_ip[0] << 8) | dst_ip[1];
     total += (dst_ip[2] << 8) | dst_ip[3];
     total += IP_PROTOCOL_UDP;
-    total += udp_len;
+    total += length - sizeof(ip_header);
     int i;
     for (i = 0; i < data_len - 1; i += 2)
     {
@@ -101,9 +97,21 @@ void setup_udp_header(udp_header &udp, std::vector<uint8_t> src_ip, std::vector<
     {
         total += (data[data_len - 1] << 8);
     }
-    uint16_t *header = reinterpret_cast<uint16_t *>(&udp.src_port);
+    uint16_t *header = reinterpret_cast<uint16_t *>(&udp->src_port);
     finish_checksum(&total, header, sizeof(udp_header) - sizeof(ip_header));
-    udp.checksum = htons(static_cast<uint16_t>(total));
+    return htons(static_cast<uint16_t>(total));
+}
+
+void setup_udp_header(udp_header &udp, std::vector<uint8_t> src_ip, std::vector<uint8_t> dst_ip, uint16_t length,
+                      uint16_t dst_port, uint16_t src_port)
+{
+    uint16_t udp_len = length - sizeof(ip_header);
+    setup_ip_header(udp.ip, IP_PROTOCOL_UDP, src_ip, dst_ip, udp_len);
+    udp.dst_port = htons(dst_port);
+    udp.src_port = htons(src_port);
+    udp.length = htons(udp_len);
+    udp.checksum = 0;
+    udp.checksum = udp_checksum(&udp, length);
 }
 
 std::unique_ptr<uint8_t[]> icmp_ping_reply(icmp &msg, unsigned int buf_len)
@@ -150,6 +158,11 @@ bool verify_ip_checksum(ip_header *msg)
     return static_cast<uint16_t>(total) == 0;
 }
 
+bool verify_udp_checksum(udp_header *udp, size_t buf_len)
+{
+    return udp_checksum(udp, buf_len) == 0;
+}
+
 std::unique_ptr<uint8_t[]> dns_make_query(std::string domain, uint16_t query_id, std::vector<uint8_t> src_ip, std::vector<uint8_t> dst_ip, size_t *packet_size)
 {
     std::vector<std::string> labels;
@@ -185,4 +198,66 @@ std::unique_ptr<uint8_t[]> dns_make_query(std::string domain, uint16_t query_id,
     qd[label_start + 4] = 1;
     setup_udp_header(typed_buf->udp, src_ip, dst_ip, length, 53, 100);
     return buf;
+}
+
+std::string parse_label(uint8_t **cursor, uint8_t *dns_begin)
+{
+    // This is vulernable to buffer overflow...but for now I don't care
+    std::string domain = "";
+    if (**cursor & 0b11000000 == 0b11000000)
+    {
+        // We are using compression
+        size_t offset = **cursor & 0b00111111;
+        uint8_t *new_cursor = dns_begin + offset;
+        *cursor += 2;
+        domain = parse_label(&new_cursor, dns_begin);
+        return domain;
+    }
+    while (true)
+    {
+        size_t label_len = **cursor;
+        if (label_len == 0)
+            break;
+        *cursor += 1;
+        domain += std::string(*cursor, *cursor + label_len);
+        *cursor += label_len;
+    }
+    *cursor += 4;
+    return domain;
+}
+
+std::tuple<std::string, std::vector<uint8_t>> parse_dns_response(dns_header *buf, size_t buf_len)
+{
+    uint8_t *cursor = reinterpret_cast<uint8_t *>(buf) + sizeof(dns_header);
+    uint8_t *dns_begin = reinterpret_cast<uint8_t *>(buf->id);
+    size_t qdcount = buf->qdcount;
+    for (int i = 0; i < qdcount; i++)
+    {
+        parse_label(&cursor, dns_begin);
+    }
+    size_t ancount = buf->ancount;
+    for (int i = 0; i < qdcount; i++)
+    {
+        auto domain = parse_label(&cursor, dns_begin);
+        if (*reinterpret_cast<uint16_t *>(cursor) != htons(1))
+        {
+            // Oh no... This is not an A record
+            // Skip
+            continue;
+        }
+        uint8_t *rdlen = cursor + 8; // Skip over class, ttl assume we don't need them
+        uint16_t ip_len = *reinterpret_cast<uint16_t *>(rdlen);
+        uint8_t *ip_data = rdlen + 2;
+        if (ip_len != 4)
+        {
+            // Weird...
+            std::cout << "IPv4 addr doesn't have 4 bytes" << std::endl;
+            continue;
+        }
+        std::vector<uint8_t> ip(ip_data, ip_data + ip_len);
+        return std::make_tuple(domain, ip);
+    }
+    // Failure
+    std::cout << "Unable to parse DNS packet" << std::endl;
+    return std::make_tuple("", std::vector<uint8_t>({0, 0, 0, 0}));
 }

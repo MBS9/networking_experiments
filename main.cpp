@@ -22,6 +22,7 @@
 int tun_fd;
 
 std::map<std::vector<uint8_t>, std::vector<uint8_t>> arp_cache;
+std::map<std::string, std::vector<uint8_t>> dns_cache;
 
 int tun_alloc(char *dev)
 {
@@ -121,7 +122,7 @@ std::vector<uint8_t> arp_lookup(std::vector<uint8_t> ip)
     return arp_cache[copy_ip];
 }
 
-bool mainloop()
+void mainloop()
 {
     uint8_t pretend_ip[] = PRETEND_IP;
     uint8_t pretend_mac[] = PRETEND_MAC;
@@ -184,7 +185,9 @@ bool mainloop()
                 std::cout << "Bad IP checksum detected" << std::endl;
                 continue;
             }
-            if (ip->protocol == IP_PROTOCOL_ICMP)
+            switch (ip->protocol)
+            {
+            case IP_PROTOCOL_ICMP:
             {
                 icmp *req = reinterpret_cast<icmp *>(buffer);
                 if (!verify_icmp_checksum(req, bytes_received))
@@ -197,6 +200,36 @@ bool mainloop()
                     auto reply = icmp_ping_reply(*req, bytes_received);
                     int bytes_sent = send_frame(tun_fd, reinterpret_cast<const uint8_t *>(reply.get()), bytes_received);
                 }
+            }
+            break;
+
+            case IP_PROTOCOL_UDP:
+            {
+                std::cout << "Parsing DNS" << std::endl;
+                udp_header *udp = reinterpret_cast<udp_header *>(buffer);
+                if (!verify_udp_checksum(udp, bytes_received))
+                {
+                    std::cout << "Bad UDP checksum detected" << std::endl;
+                    continue;
+                }
+                {
+                    // Assuming this is DNS response - how can I check for this?
+                    dns_header *dns = reinterpret_cast<dns_header *>(buffer);
+                    if (dns->flags & 0xF != 0)
+                    {
+                        std::cout << "DNS ERROR DETECTED" << std::endl;
+                        continue;
+                    }
+                    std::string name;
+                    std::vector<uint8_t> ip_rec;
+                    std::tie(name, ip_rec) = parse_dns_response(dns, bytes_received);
+                    dns_cache[name] = ip_rec;
+                }
+            }
+            break;
+
+            default:
+                break;
             }
         }
         break;
@@ -220,12 +253,25 @@ int main()
         }
         system(("ip addr add " + std::string(GATEWAY_IP_WITH_SUBNET_MASK) + " dev " + std::string(name)).c_str());
         std::cout << "TAP interface '" << name << "' created with file descriptor: " << tun_fd << std::endl;
-        std::cout << "Hit enter to begin sending packets..." << std::endl;
+        std::cout << "Hit enter to begin..." << std::endl;
         std::cin.get();
         std::thread in(mainloop);
+        std::string domain = "google.com";
         size_t packet_size;
-        auto p1 = dns_make_query("google.com", 2, PRETEND_IP, DNS_IP, &packet_size);
+        auto p1 = dns_make_query(domain, 2, PRETEND_IP, DNS_IP, &packet_size);
         send_frame(tun_fd, p1.get(), packet_size);
+        while (dns_cache.find(domain) == dns_cache.end())
+        {
+            std::this_thread::sleep_for(std::chrono::milliseconds(20));
+        }
+        std::vector<uint8_t> ip = dns_cache[domain];
+        std::cout << "Successfully found ";
+        std::cout << domain << " at: {";
+        for (uint8_t data : ip)
+        {
+            std::cout << " " << data << ",";
+        }
+        std::cout << "}" << std::endl;
         in.join();
         close(tun_fd);
     }

@@ -94,4 +94,6 @@ std::vector<uint8_t> get_mac_from_arp(const full_arp_packet *arp_response);
 std::unique_ptr<uint8_t[]> icmp_ping_reply(icmp &msg, unsigned int buf_len);
 bool verify_icmp_checksum(icmp *msg, int buf_len);
 bool verify_ip_checksum(ip_header *msg);
+bool verify_udp_checksum(udp_header *udp, size_t buf_len);
 std::unique_ptr<uint8_t[]> dns_make_query(std::string domain, uint16_t query_id, std::vector<uint8_t> src_ip, std::vector<uint8_t> dst_ip, size_t *packet_size);
+std::tuple<std::string, std::vector<uint8_t>> parse_dns_response(dns_header *buf, size_t buf_len);

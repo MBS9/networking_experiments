@@ -266,10 +266,10 @@ int main()
         }
         std::vector<uint8_t> ip = dns_cache[domain];
         std::cout << "Successfully found ";
-        std::cout << domain << " at: {";
+        std::cout << domain << " at: ";
         for (uint8_t data : ip)
         {
-            std::cout << " " << data << ",";
+            std::cout << static_cast<int>(data) << ".";
         }
         std::cout << "}" << std::endl;
         in.join();

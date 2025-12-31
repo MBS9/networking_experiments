@@ -11,6 +11,8 @@
 #include <iostream>
 #include <cerrno>
 #include <map>
+#include <thread>
+#include <chrono>
 
 #include "protocols.h"
 #include "main.h"
@@ -112,28 +114,17 @@ std::vector<uint8_t> arp_lookup(std::vector<uint8_t> ip)
     {
         throw std::runtime_error("Failed to send complete ARP request packet.");
     }
-    uint8_t buffer[MAX_ETHERNET_FRAME_SIZE];
-    int bytes_received = 0;
-    full_arp_packet *arp_response = reinterpret_cast<full_arp_packet *>(buffer);
-    arp_response->eth.type = 0;
-    while (ntohs(arp_response->eth.type) != ETHERNET_TYPE_ARP || ntohs(arp_response->opcode) != ARP_REPLY || memcmp(arp_response->srcpr, ip.data(), 4) != 0)
+    while (arp_cache.find(copy_ip) == arp_cache.end())
     {
-        std::memset(buffer, 0, sizeof(buffer));
-        bytes_received = receive_frame(tun_fd, buffer, sizeof(buffer));
+        std::this_thread::sleep_for(std::chrono::milliseconds(2));
     }
-    if (bytes_received < sizeof(full_arp_packet))
-    {
-        throw std::runtime_error("Received packet is smaller than an ARP packet.");
-    }
-
-    auto mac = get_mac_from_arp(arp_response);
-    arp_cache[copy_ip] = mac;
-    return mac;
+    return arp_cache[copy_ip];
 }
 
-bool arp_reply()
+bool mainloop()
 {
     uint8_t pretend_ip[] = PRETEND_IP;
+    uint8_t pretend_mac[] = PRETEND_MAC;
     uint8_t buffer[MAX_ETHERNET_FRAME_SIZE];
     int bytes_received = 0;
     ethernet_header *eth = reinterpret_cast<ethernet_header *>(buffer);
@@ -154,17 +145,28 @@ bool arp_reply()
             }
             if (std::memcmp(arp_response->dstpr, pretend_ip, sizeof(pretend_ip)) == 0)
             {
-                auto arp_packet = create_arp_packet(
-                    PRETEND_MAC, // Source MAC
-                    PRETEND_IP,  // Source IP
-                    std::vector(arp_response->srchw, arp_response->srchw + 6),
-                    std::vector(arp_response->srcpr, arp_response->srcpr + 4),
-                    ARP_REPLY
-                );
-                int bytes_sent = send_frame(tun_fd, reinterpret_cast<const uint8_t *>(arp_packet.get()), sizeof(full_arp_packet));
-                if (bytes_sent != sizeof(full_arp_packet))
+                if (ntohs(arp_response->opcode) == ARP_REQUEST)
                 {
-                    throw std::runtime_error("Failed to send complete ARP request packet.");
+                    auto arp_packet = create_arp_packet(
+                        PRETEND_MAC, // Source MAC
+                        PRETEND_IP,  // Source IP
+                        std::vector(arp_response->srchw, arp_response->srchw + 6),
+                        std::vector(arp_response->srcpr, arp_response->srcpr + 4),
+                        ARP_REPLY);
+                    int bytes_sent = send_frame(tun_fd, reinterpret_cast<const uint8_t *>(arp_packet.get()), sizeof(full_arp_packet));
+                    if (bytes_sent != sizeof(full_arp_packet))
+                    {
+                        throw std::runtime_error("Failed to send complete ARP request packet.");
+                    }
+                }
+                if (ntohs(arp_response->opcode) == ARP_REPLY)
+                {
+                    if (bytes_received < sizeof(full_arp_packet))
+                    {
+                        throw std::runtime_error("Received packet is smaller than an ARP packet.");
+                    }
+                    auto mac = get_mac_from_arp(arp_response);
+                    arp_cache[std::vector(arp_response->srcpr, arp_response->srcpr + 4)] = mac;
                 }
             }
         }
@@ -220,12 +222,11 @@ int main()
         std::cout << "TAP interface '" << name << "' created with file descriptor: " << tun_fd << std::endl;
         std::cout << "Hit enter to begin sending packets..." << std::endl;
         std::cin.get();
+        std::thread in(mainloop);
         size_t packet_size;
         auto p1 = dns_make_query("google.com", 2, PRETEND_IP, DNS_IP, &packet_size);
         send_frame(tun_fd, p1.get(), packet_size);
-        arp_reply();
-        std::cout << "Exiting!" << std::endl;
-        std::cin.get();
+        in.join();
         close(tun_fd);
     }
     catch (const std::runtime_error &e)

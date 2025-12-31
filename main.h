@@ -8,7 +8,7 @@
 #define GATEWAY_IP {10, 0, 0, 1}
 #define GATEWAY_IP_WITH_SUBNET_MASK "10.0.0.1/24"
 
-#define DNS_IP {192, 168, 1, 225}
+#define DNS_IP {1, 1, 1, 1}
 
 // The below is a random MAC address that doesn't belong to the current computer
 // It is a pretend address of another device on the same network

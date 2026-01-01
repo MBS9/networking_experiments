@@ -1,4 +1,4 @@
-# C++ implementation of some network protocols
+# C++ implementation of some network protocols for personal education
 
 ## Preparing
 
@@ -7,7 +7,7 @@ To compile:
 g++ main.cpp protocols.cpp -o main
 ```
 
-To make packet routing possible for outbound connections:
+To make packet routing possible for outbound packets (run this on the computer where you run this program):
 ```shell
 sudo sysctl -w net.ipv4.ip_forward=1
 sudo iptables -A FORWARD -j ACCEPT

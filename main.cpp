@@ -270,7 +270,7 @@ int main()
         {
             std::cout << static_cast<int>(data) << ".";
         }
-        std::cout << "}" << std::endl;
+        std::cout << std::endl;
         in.join();
         close(tun_fd);
     }

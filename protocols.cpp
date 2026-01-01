@@ -204,10 +204,11 @@ std::string parse_label(uint8_t **cursor, uint8_t *dns_begin)
 {
     // This is vulernable to buffer overflow...but for now I don't care
     std::string domain = "";
-    if (**cursor & 0b11000000 == 0b11000000)
+    size_t offset_candidate = static_cast<size_t>(ntohs(*reinterpret_cast<uint16_t *>(*cursor)));
+    if ((offset_candidate & 0xc000) == 0xc000)
     {
         // We are using compression
-        size_t offset = **cursor & 0b00111111;
+        size_t offset = offset_candidate & 0x3FFF;
         uint8_t *new_cursor = dns_begin + offset;
         *cursor += 2;
         domain = parse_label(&new_cursor, dns_begin);
@@ -220,23 +221,27 @@ std::string parse_label(uint8_t **cursor, uint8_t *dns_begin)
             break;
         *cursor += 1;
         domain += std::string(*cursor, *cursor + label_len);
+        domain += ".";
         *cursor += label_len;
     }
-    *cursor += 4;
+    domain.pop_back();
+    // Move to first byte in next field
+    *cursor += 1;
     return domain;
 }
 
 std::tuple<std::string, std::vector<uint8_t>> parse_dns_response(dns_header *buf, size_t buf_len)
 {
     uint8_t *cursor = reinterpret_cast<uint8_t *>(buf) + sizeof(dns_header);
-    uint8_t *dns_begin = reinterpret_cast<uint8_t *>(&buf->id);
+    uint8_t *dns_begin = reinterpret_cast<uint8_t *>(buf) + sizeof(udp_header);
     size_t qdcount = ntohs(buf->qdcount);
     for (int i = 0; i < qdcount; i++)
     {
         parse_label(&cursor, dns_begin);
+        cursor += 4;
     }
     size_t ancount = ntohs(buf->ancount);
-    for (int i = 0; i < qdcount; i++)
+    for (int i = 0; i < ancount; i++)
     {
         auto domain = parse_label(&cursor, dns_begin);
         if (*reinterpret_cast<uint16_t *>(cursor) != htons(1))
@@ -246,7 +251,7 @@ std::tuple<std::string, std::vector<uint8_t>> parse_dns_response(dns_header *buf
             continue;
         }
         uint8_t *rdlen = cursor + 8; // Skip over class, ttl assume we don't need them
-        uint16_t ip_len = *reinterpret_cast<uint16_t *>(rdlen);
+        uint16_t ip_len = ntohs(*reinterpret_cast<uint16_t *>(rdlen));
         uint8_t *ip_data = rdlen + 2;
         if (ip_len != 4)
         {

@@ -17,6 +17,7 @@ sudo iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
 ```
 
 To make packet routing for inbound packets (assuming no NAT is used, run this on the computer sending packets):
+(replace the ip addresses with the correct value for your specific setup)
 ```shell
 ## For windows:
 netsh interface ipv4 add neighbors "Local Area Connection" 192.168.1.224 00-15-5d-05-ab-06

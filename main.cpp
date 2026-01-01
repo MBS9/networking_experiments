@@ -21,6 +21,11 @@
 
 int tun_fd;
 
+uint8_t gateway[] = GATEWAY_IP;
+uint8_t pretend_ip[] = PRETEND_IP;
+uint8_t pretend_mac[] = PRETEND_MAC;
+uint8_t subnet_mask[] = SUBNET_MASK;
+std::vector<uint8_t> gateway_ip(gateway, gateway + 4);
 std::map<std::vector<uint8_t>, std::vector<uint8_t>> arp_cache;
 std::map<std::string, std::vector<uint8_t>> dns_cache;
 
@@ -85,20 +90,12 @@ std::vector<uint8_t> arp_lookup(std::vector<uint8_t> ip)
     uint8_t network_addr1[] = PRETEND_IP;
     std::vector<uint8_t> copy_ip(ip);
     uint8_t *network_addr2 = copy_ip.data();
-    uint8_t subnet_mask[] = SUBNET_MASK;
     for (int i = 0; i < 4; i++)
     {
         network_addr1[i] &= subnet_mask[i];
         network_addr2[i] &= subnet_mask[i];
     }
-    if (memcmp(network_addr2, &network_addr1, 4) != 0)
-    {
-        copy_ip = GATEWAY_IP;
-    }
-    else
-    {
-        copy_ip = ip;
-    }
+    copy_ip = (memcmp(network_addr2, network_addr1, 4) != 0) ? gateway_ip : ip;
     auto mac_ip = arp_cache.find(copy_ip);
     if (mac_ip != arp_cache.end())
     {
@@ -124,8 +121,6 @@ std::vector<uint8_t> arp_lookup(std::vector<uint8_t> ip)
 
 void mainloop()
 {
-    uint8_t pretend_ip[] = PRETEND_IP;
-    uint8_t pretend_mac[] = PRETEND_MAC;
     uint8_t buffer[MAX_ETHERNET_FRAME_SIZE];
     int bytes_received = 0;
     ethernet_header *eth = reinterpret_cast<ethernet_header *>(buffer);
@@ -214,7 +209,7 @@ void mainloop()
                 {
                     // Assuming this is DNS response - how can I check for this?
                     dns_header *dns = reinterpret_cast<dns_header *>(buffer);
-                    if (ntohl(dns->flags) & 0xF != 0 || ntohl(dns->flags) & 0b1000000000000000)
+                    if (((ntohl(dns->flags) & 0xF) != 0) || (ntohl(dns->flags) & 0b1000000000000000))
                     {
                         std::cout << "Wrong DNS recieved" << std::endl;
                         continue;

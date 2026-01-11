@@ -20,10 +20,10 @@ To make packet routing for inbound packets (assuming no NAT is used, run this on
 (replace the ip addresses with the correct value for your specific setup)
 ```shell
 ## For windows:
-netsh interface ipv4 add neighbors "Local Area Connection" 192.168.1.224 00-15-5d-05-ab-06
+netsh interface ipv4 add neighbors "Local Area Connection" 10.0.0.2 00-15-5d-05-ab-06
 
 ## For linux:
-ip route add 10.0.0.1/24 via {ip of computer} dev eth0
+ip route add 10.0.0.0/24 via {ip of computer} dev eth0
 ```
 
 ## Running
